@@ -19,6 +19,7 @@ from tts import clone_voice, speak, delete_voice
 
 load_dotenv()
 
+DEBUG_WAV = "debug.wav"
 PRAYER_WAV = "prayer.wav"
 QUESTION_WAV = "question.wav"
 
@@ -65,8 +66,8 @@ def run_session(
 ) -> None:
 
     # ── PRAYER ────────────────────────────────────────────────────────────────
-    if os.path.exists(PRAYER_WAV):
-        print("\n  [Debug: reusing existing prayer.wav]")
+    if os.path.exists(DEBUG_WAV):
+        print("\n  [Debug mode enabled: using existing recording in debug.wav]")
     else:
         print("\nClap twice (press all 3 keys twice) to begin your prayer...")
         _wait_for_double_clap(state)
