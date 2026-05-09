@@ -1,6 +1,6 @@
 # Tuhan Kami
 
-_Tuhan Kami_ — _Tuhan_ is "God" in Malay; _Kami_ is "God" (神) in Japanese. Together as a Malay phrase, _Tuhan Kami_ means "Our God."
+_Tuhan Kami_ — _Tuhan_ is "God" in Malay; _Kami (神)_ is "God" in Japanese. Together as a Malay phrase, _Tuhan Kami_ means "Our God."
 
 This program is a key part of an interactive art installation that reconstructs the bicameral voice: the ancient, authoritative inner voice that psychologist Julian Jaynes theorised was once heard by all humans as the literal word of god, before the emergence of modern consciousness silenced it.
 
