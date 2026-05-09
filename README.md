@@ -16,8 +16,6 @@ The installation runs as a pseudo-ritual:
 
 4. **Departure** — The participant give thanks to the Entity or says goodbye. A farewell is spoken, three bells toll, and the voice is deleted. No trace remains.
 
----
-
 ### Signal flow
 
 ```
@@ -31,15 +29,15 @@ Participant speaks prayer
        ↓
   [bell] — session begins
        ↓
-  ┌── Participant holds buttons → speaks question ──┐
-  │   [audio.py]  record_push_to_talk               │
-  │   [stt.py]    Whisper → question text + language │
-  │   [llm.py]    Claude Haiku → Entity answer       │
-  │   [tts.py]    ElevenLabs synthesises answer PCM  │
-  │   [audio.py]  pitch shift −2 semitones + reverb  │
-  │   [speakers]  play_Entity_pcm_interruptible       │
-  └──────────────────────────────────────────────────┘
-       ↓ (goodbye phrase detected)
+  ┌──── Participant holds buttons → speaks question ───┐
+  │   [audio.py]  record_push_to_talk                  │
+  │   [stt.py]    Whisper → question text + language   │
+  │   [llm.py]    Claude Haiku → Entity answer         │
+  │   [tts.py]    ElevenLabs synthesises answer PCM    │
+  │   [audio.py]  pitch shift −2 semitones + reverb    │
+  │   [speakers]  play_Entity_pcm_interruptible        │
+  └────────────────────────────────────────────────────┘
+       ↓ (farewell phrase detected)
   [llm.py]   farewell response
   [tts.py]   speak farewell
   [bell × 3] — session ends
@@ -135,10 +133,18 @@ ElevenLabs applies additional shaping during the remix step, guided by this desc
 
 > _"A powerful, ancient, and slightly ominous voice. Deep and resonant, carrying the weight of millennia and the authority of a deity-like entity. Otherworldly and commanding... an inverted version of itself. Majestic but also chilling."_
 
-## Goodbye Phrases
+## Farewell Phrases
 
 The session ends when the participant's question contains any of the following:
 
 **English:** `thank`, `thanks`, `end`, `stop`, `done`, `finish`, `exit`, `quit`
 
 **Japanese:** `ありがとうございます`, `ありがとう`, `ありがと`, `終わり`, `おわり`, `やめて`, `終わります`, `終了`
+
+## Credits and AI Disclosure
+
+`bell.mp3` is provided by OtoLogic ([梵鐘04](https://otologic.jp/free/se/temple-bells01.html))
+
+Base code and documentation was written by Anthropic's [Claude](https://claude.ai/)
+
+This program requires the use of AI, specifically [Claude](https://console.anthropic.com) and [ElevenLabs](https://elevenlabs.io) to function properly. As part of our compliance, any stored user data (user audio, user chatbot interactions, etc.) are deleted after every session.
