@@ -10,9 +10,9 @@ The installation runs as a pseudo-ritual:
 
 1. **Prayer** — The participant speaks a prayer aloud. The Entity learns the seeker's voice and their innermost concerns from what they offer to god.
 
-2. **Transfiguration** — The prayer recording is uploaded to ElevenLabs, cloned, and then remixed: algorithmically reshaped into something deeper, older, and vast. An _"inverted version of oneself."_. Local audio processing then adds pitch shift and reverb. This voice is what becomes the Entity's voice.
+2. **Transfiguration** — The prayer recording is uploaded to ElevenLabs, cloned, and then remixed. Transformed into something deeper, older, and vast. An _"inverted version of oneself."_. Local audio processing then adds pitch shift and reverb. This voice is what becomes the Entity's voice.
 
-3. **Dialogue** — The participant holds the ritual buttons and speaks their question. Whisper transcribes it. Claude (acting as the voice of god, anchored to the prayer) responds: authoritative, oracular, specific, and rooted entirely in what the seeker has already revealed about themselves.
+3. **Dialogue** — The participant holds down the macro pad keys and speaks their question. Then, Whisper transcribes it. Claude (acting as the voice of god, anchored to the prayer) responds: authoritative, oracular, specific, and rooted entirely in what the seeker has already revealed about themselves.
 
 4. **Departure** — The participant give thanks to the Entity or says goodbye. A farewell is spoken, three bells toll, and the voice is deleted. No trace remains.
 
@@ -111,10 +111,10 @@ If `prayer.wav` exists in the project directory when the session starts, the pro
 
 The Entity is powered by `claude-haiku-4-5`. Its persona is defined in [prompts.py](prompts.py):
 
-- Speaks as god — not _about_ god, not _for_ god.
+- The Entity speaks as a diety.
 - Draws directly on the content of the participant's prayer: their stated fears, desires, and circumstances inform every answer.
 - Never offers choices. The Entity speaks the singular truth.
-- Responds in the same language as the question (English or Japanese detected automatically).
+- Responds in the same language as the participant's question.
 - Response length scales with question length: 2–3 sentences, capped at ~90 words.
 - When a situation seems hopeless, the Entity may give prophecy.
 
