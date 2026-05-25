@@ -5,3 +5,4 @@ soundfile
 scipy
 python-dotenv
 sounddevice
+python-kasa
