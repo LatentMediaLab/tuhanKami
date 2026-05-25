@@ -1,9 +1,11 @@
+import asyncio
 import os
 import re
 
 import anthropic
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
+from kasa import Discover
 
 from audio import (
     record_push_to_talk,
@@ -18,6 +20,24 @@ from llm import ask_oracle
 from tts import clone_voice, speak, delete_voice
 
 load_dotenv()
+
+
+def _entity_travel(on: bool) -> None:
+    async def _run():
+        dev = await Discover.discover_single(
+            os.environ["TPLINK_HOST"],
+            username=os.environ["TPLINK_USERNAME"],
+            password=os.environ["TPLINK_PASSWORD"],
+        )
+        if on:
+            await dev.turn_on()
+        else:
+            await dev.turn_off()
+        await dev.update()
+        await dev.disconnect()
+
+    asyncio.run(_run())
+
 
 DEBUG_WAV = "debug.wav"
 PRAYER_WAV = "prayer.wav"
@@ -79,8 +99,10 @@ def run_session(
     print("  Prayer received.\n")
 
     # ── VOICE CLONE ───────────────────────────────────────────────────────────
+    _entity_travel(True)
     voice_id = clone_voice(eleven_client, PRAYER_WAV)
     play_bell("bell.mp3")
+    _entity_travel(False)
     print("\nHold all 3 keys while speaking. Release to send.\n")
 
     messages = []
@@ -116,9 +138,11 @@ def run_session(
                     anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text, language=q_lang
                 )
                 print(f"\n  They: {farewell}\n")
+                _entity_travel(True)
                 pcm = speak(eleven_client, voice_id, farewell)
                 play_oracle_pcm_interruptible(pcm, state)
                 play_bell("bell.mp3", times=3)
+                _entity_travel(False)
                 break
 
             print("  [They speak...]")
@@ -135,6 +159,7 @@ def run_session(
             _wait_for_release(state)
 
     finally:
+        _entity_travel(False)
         delete_voice(eleven_client, voice_id)
         for path in [PRAYER_WAV, QUESTION_WAV]:
             if os.path.exists(path):
