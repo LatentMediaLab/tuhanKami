@@ -20,12 +20,12 @@ from tts import clone_voice, speak, delete_voice
 load_dotenv()
 
 
-def entity_travel(on: bool) -> None:
+def entity_travel(on: bool, device: int) -> None:
     async def _run():
         dev = await Discover.discover_single(
-            os.environ["TPLINK_HOST"],
-            username=os.environ["TPLINK_USERNAME"],
-            password=os.environ["TPLINK_PASSWORD"],
+            os.environ["TPLINK_HOST-" + str(device)],
+            username=os.environ["TPLINK_USERNAME-" + str(device)],
+            password=os.environ["TPLINK_PASSWORD-" + str(device)],
         )
         if on:
             await dev.turn_on()
@@ -69,9 +69,9 @@ def run_ritual(
     print("  Prayer received.\n")
 
     # ── VOICE CLONE + GREETING ────────────────────────────────────────────────
-    entity_travel(True)
+    entity_travel(True, 1)
     voice_id = clone_voice(eleven_client, prayer_audio)
-    entity_travel(False)
+    entity_travel(False, 1)
     greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
     greeting_pcm = speak(eleven_client, voice_id, greeting)
     print(f"\n  They: {greeting}\n")
@@ -90,10 +90,10 @@ def run_ritual(
                     anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text
                 )
                 print(f"\n  They: {farewell}\n")
-                entity_travel(True)
+                entity_travel(True, 1)
                 pcm = speak(eleven_client, voice_id, farewell)
                 play_entity_pcm_interruptible(pcm, ritual)
-                entity_travel(False)
+                entity_travel(False, 1)
                 play_bell(bell_audio, times=3, overlap_secs=7.0)
                 break
 
@@ -120,7 +120,7 @@ def run_ritual(
             play_entity_pcm_interruptible(pcm, ritual)
 
     finally:
-        entity_travel(False)
+        entity_travel(False, 1)
         delete_voice(eleven_client, voice_id)
         for path in [PRAYER_WAV, QUESTION_WAV]:
             if os.path.exists(path):
