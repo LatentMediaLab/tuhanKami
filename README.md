@@ -151,7 +151,7 @@ ElevenLabs applies additional shaping during the remix step, guided by this desc
 
 ### Bell sounds
 
-Bell audio is drawn randomly from four variations of `bonsho/Bonsho04-*.mp3` each session. On arrival, the bell plays once with the Entity's greeting overlaid 4 seconds in. On departure, the bell plays three times with each strike overlapping the previous by 8 seconds.
+Bell audio is drawn randomly from four variations of `bonsho/Bonsho04-*.mp3` each session. On arrival, the bell plays once with the Entity's greeting overlaid 3 seconds in. On departure, the bell plays three times with each strike overlapping the previous by 7 seconds.
 
 ## Credits and AI Disclosure
 
