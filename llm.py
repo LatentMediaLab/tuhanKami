@@ -6,7 +6,7 @@ from prompts import build_system_prompt
 TAG_RE = re.compile(r"\[[^\]\n]{1,40}\]")
 
 
-def _format_for_tts(answer: str) -> str:
+def format_for_tts(answer: str) -> str:
     # Keep output compact and TTS-friendly even when the model drifts from format rules.
     # Remove optional audio tags for lower-latency, cleaner synthesis.
     text = TAG_RE.sub("", answer)
@@ -18,7 +18,7 @@ def _format_for_tts(answer: str) -> str:
     return text
 
 
-def _extract_text(content_blocks: Sequence[object]) -> str:
+def extract_text(content_blocks: Sequence[object]) -> str:
     parts = []
     for block in content_blocks:
         if getattr(block, "type", None) == "text":
@@ -34,7 +34,7 @@ LANGUAGE_NAMES: dict[str, str] = {
 }
 
 
-def ask_oracle(
+def ask_entity(
     client: anthropic.Anthropic,
     messages: list,
     question: str,
@@ -57,6 +57,6 @@ def ask_oracle(
         system=system,
         messages=messages,
     )
-    answer = _format_for_tts(_extract_text(response.content))
+    answer = format_for_tts(extract_text(response.content))
     messages.append({"role": "assistant", "content": answer})
     return answer

@@ -10,7 +10,7 @@ import soundfile as sf
 from scipy.signal import resample as sp_resample
 
 if TYPE_CHECKING:
-    from clap import ClapSession
+    from clap import ClapRitual
 
 SAMPLE_RATE = 16000  # Whisper's native rate — no resampling needed
 
@@ -96,14 +96,14 @@ def record_voice_activity(
         sf.write(filename, audio, SAMPLE_RATE)
 
 
-def _pitch_shift(audio: np.ndarray, semitones: float = -2.0) -> np.ndarray:
+def pitch_shift(audio: np.ndarray, semitones: float = -2.0) -> np.ndarray:
     """Shift pitch by resampling. Negative = deeper."""
     factor = 2.0 ** (semitones / 12.0)
     stretched = np.asarray(sp_resample(audio, int(len(audio) / factor)))
     return np.asarray(sp_resample(stretched, len(audio)))
 
 
-def _add_reverb(audio: np.ndarray, delay_samples: int = 800, decay: float = 0.38, echoes: int = 5) -> np.ndarray:
+def add_reverb(audio: np.ndarray, delay_samples: int = 800, decay: float = 0.38, echoes: int = 5) -> np.ndarray:
     """Simple delay-line reverb. delay_samples=800 ≈ 50ms at 16kHz."""
     result = audio.copy()
     for i in range(1, echoes + 1):
@@ -113,11 +113,11 @@ def _add_reverb(audio: np.ndarray, delay_samples: int = 800, decay: float = 0.38
     return np.clip(result, -1.0, 1.0)
 
 
-def _process_oracle_audio(pcm_bytes: bytes) -> np.ndarray:
+def process_entity_audio(pcm_bytes: bytes) -> np.ndarray:
     audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     audio = audio.flatten()
-    audio = _pitch_shift(audio, semitones=-2.0)
-    return _add_reverb(audio)
+    audio = pitch_shift(audio, semitones=-2.0)
+    return add_reverb(audio)
 
 
 def play_pcm(pcm_bytes: bytes) -> None:
@@ -126,9 +126,9 @@ def play_pcm(pcm_bytes: bytes) -> None:
     sd.wait()
 
 
-def play_oracle_pcm(pcm_bytes: bytes) -> None:
-    """Plays oracle TTS with pitch shift and reverb applied."""
-    sd.play(_process_oracle_audio(pcm_bytes), samplerate=SAMPLE_RATE)
+def play_entity_pcm(pcm_bytes: bytes) -> None:
+    """Plays entity TTS with pitch shift and reverb applied."""
+    sd.play(process_entity_audio(pcm_bytes), samplerate=SAMPLE_RATE)
     sd.wait()
 
 
@@ -137,7 +137,7 @@ def is_silent(filename: str, threshold: float = 0.001) -> bool:
     return float(np.abs(data).mean()) < threshold
 
 
-def _load_bell(bell_path: str) -> np.ndarray:
+def load_bell(bell_path: str) -> np.ndarray:
     """Load a bell file as a mono float32 array at SAMPLE_RATE."""
     from scipy.signal import resample as sp_resample
     data, rate = sf.read(bell_path, dtype="float32")
@@ -160,16 +160,16 @@ def play_bell(
 
     times / overlap_secs: ring the bell `times` times, each starting
         overlap_secs after the previous (ignored when times=1).
-    greeting_pcm: oracle PCM to overlay, starting at greeting_offset_secs.
+    greeting_pcm: entity PCM to overlay, starting at greeting_offset_secs.
     """
-    bell = _load_bell(bell_path)
+    bell = load_bell(bell_path)
     step = int(overlap_secs * SAMPLE_RATE)
     total = step * (times - 1) + len(bell)
 
     greeting: np.ndarray | None = None
     offset = 0
     if greeting_pcm is not None:
-        greeting = _process_oracle_audio(greeting_pcm)
+        greeting = process_entity_audio(greeting_pcm)
         offset = int(greeting_offset_secs * SAMPLE_RATE)
         total = max(total, offset + len(greeting))
 
@@ -189,13 +189,13 @@ def play_bell(
 
 # ── Clap-driven recording and playback ───────────────────────────────────────
 
-def record_until_double_clap(session: "ClapSession", filename: str) -> None:
-    """Records continuously until ClapSession detects a double clap."""
+def record_until_double_clap(ritual: "ClapRitual", filename: str) -> None:
+    """Records continuously until ClapRitual detects a double clap."""
     chunks: list[np.ndarray] = []
     q: queue.Queue = queue.Queue()
     CHUNK_SIZE = int(SAMPLE_RATE * 0.05)
 
-    session._double.clear()
+    ritual._double.clear()
 
     def callback(indata, frames, time, status):
         q.put(indata.copy())
@@ -203,7 +203,7 @@ def record_until_double_clap(session: "ClapSession", filename: str) -> None:
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                         blocksize=CHUNK_SIZE, callback=callback):
         while True:
-            if session._double.is_set():
+            if ritual._double.is_set():
                 break
             try:
                 chunks.append(q.get(timeout=0.1))
@@ -214,17 +214,17 @@ def record_until_double_clap(session: "ClapSession", filename: str) -> None:
         sf.write(filename, np.concatenate(chunks, axis=0), SAMPLE_RATE)
 
 
-def record_question(session: "ClapSession", filename: str) -> bool:
+def record_question(ritual: "ClapRitual", filename: str) -> bool:
     """
-    Records speech using VAD. ClapSession runs concurrently on the same mic.
-    Returns True if a double clap is detected (signals end of session).
+    Records speech using VAD. ClapRitual runs concurrently on the same mic.
+    Returns True if a double clap is detected (signals end of ritual).
     """
     CHUNK_SIZE = int(SAMPLE_RATE * 0.05)
     SILENCE_CHUNKS = int(1.5 / 0.05)  # 30 chunks @ 50ms each = 1.5s of silence
     SPEECH_ONSET_CHUNKS = 2
     CAL_CHUNKS = 20  # ~1 second of inline calibration before listening
 
-    session._double.clear()
+    ritual._double.clear()
 
     q: queue.Queue = queue.Queue()
     chunks: list[np.ndarray] = []
@@ -241,7 +241,7 @@ def record_question(session: "ClapSession", filename: str) -> bool:
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                         blocksize=CHUNK_SIZE, callback=callback):
         while True:
-            if session._double.is_set():
+            if ritual._double.is_set():
                 return True
 
             try:
@@ -280,9 +280,9 @@ def record_question(session: "ClapSession", filename: str) -> bool:
     return False
 
 
-def play_oracle_pcm_interruptible(pcm_bytes: bytes, session: "ClapSession") -> None:
-    """Plays oracle audio with effects. A double clap interrupts playback."""
-    audio = _process_oracle_audio(pcm_bytes)
+def play_entity_pcm_interruptible(pcm_bytes: bytes, ritual: "ClapRitual") -> None:
+    """Plays entity audio with effects. A double clap interrupts playback."""
+    audio = process_entity_audio(pcm_bytes)
     done = threading.Event()
 
     def _play() -> None:
@@ -290,12 +290,12 @@ def play_oracle_pcm_interruptible(pcm_bytes: bytes, session: "ClapSession") -> N
         sd.wait()
         done.set()
 
-    session._double.clear()
+    ritual._double.clear()
     t = threading.Thread(target=_play, daemon=True)
     t.start()
 
     while not done.is_set():
-        if session._double.is_set():
+        if ritual._double.is_set():
             sd.stop()
             break
         _time.sleep(0.02)

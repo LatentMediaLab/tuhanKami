@@ -43,7 +43,7 @@ class InlineClapDetector:
         return False
 
 
-class ClapSession:
+class ClapRitual:
     """
     Background clap detector using sounddevice. Replaces buttons.py.
 
@@ -52,8 +52,8 @@ class ClapSession:
     alongside this one without conflict.
 
     Use as a context manager:
-        with ClapSession() as session:
-            session.wait_for_double()
+        with ClapRitual() as ritual:
+            ritual.wait_for_double()
     """
 
     CHUNK_SECS = 0.05
@@ -98,7 +98,7 @@ class ClapSession:
         self._double.clear()
         self._double.wait()
 
-    def __enter__(self) -> "ClapSession":
+    def __enter__(self) -> "ClapRitual":
         self.start()
         return self
 
