@@ -75,7 +75,7 @@ def run_session(
     greeting = ask_oracle(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an oracle or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
     greeting_pcm = speak(eleven_client, voice_id, greeting)
     print(f"\n  They: {greeting}\n")
-    play_bell(bell_audio, greeting_pcm=greeting_pcm, greeting_offset_secs=4.0)
+    play_bell(bell_audio, greeting_pcm=greeting_pcm, greeting_offset_secs=3.0)
     print("\nSpeak your question, or clap twice to end the session.\n")
 
     messages = []
@@ -94,7 +94,7 @@ def run_session(
                 pcm = speak(eleven_client, voice_id, farewell)
                 play_oracle_pcm_interruptible(pcm, session)
                 entity_travel(False)
-                play_bell(bell_audio, times=3, overlap_secs=8.0)
+                play_bell(bell_audio, times=3, overlap_secs=7.0)
                 break
 
             if not os.path.exists(QUESTION_WAV) or is_silent(QUESTION_WAV):
