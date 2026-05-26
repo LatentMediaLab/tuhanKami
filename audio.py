@@ -10,7 +10,7 @@ import soundfile as sf
 from scipy.signal import resample as sp_resample
 
 if TYPE_CHECKING:
-    from buttons import ButtonState
+    from clap import ClapSession
 
 SAMPLE_RATE = 16000  # Whisper's native rate — no resampling needed
 
@@ -137,75 +137,152 @@ def is_silent(filename: str, threshold: float = 0.001) -> bool:
     return float(np.abs(data).mean()) < threshold
 
 
-def play_bell(bell_path: str, times: int = 1, gap: float = 0.5) -> None:
+def _load_bell(bell_path: str) -> np.ndarray:
+    """Load a bell file as a mono float32 array at SAMPLE_RATE."""
+    from scipy.signal import resample as sp_resample
+    data, rate = sf.read(bell_path, dtype="float32")
+    if data.ndim > 1:
+        data = data.mean(axis=1)
+    if rate != SAMPLE_RATE:
+        data = np.asarray(sp_resample(data, int(len(data) * SAMPLE_RATE / rate)))
+    return data
+
+
+def play_bell(
+    bell_path: str,
+    *,
+    times: int = 1,
+    overlap_secs: float = 0.0,
+    greeting_pcm: bytes | None = None,
+    greeting_offset_secs: float = 2.0,
+) -> None:
+    """Mix and play a bell with optional repetition and greeting overlay.
+
+    times / overlap_secs: ring the bell `times` times, each starting
+        overlap_secs after the previous (ignored when times=1).
+    greeting_pcm: oracle PCM to overlay, starting at greeting_offset_secs.
+    """
+    bell = _load_bell(bell_path)
+    step = int(overlap_secs * SAMPLE_RATE)
+    total = step * (times - 1) + len(bell)
+
+    greeting: np.ndarray | None = None
+    offset = 0
+    if greeting_pcm is not None:
+        greeting = _process_oracle_audio(greeting_pcm)
+        offset = int(greeting_offset_secs * SAMPLE_RATE)
+        total = max(total, offset + len(greeting))
+
+    mixed = np.zeros(total, dtype="float32")
     for i in range(times):
-        subprocess.run(["afplay", bell_path], check=False)
-        if i < times - 1:
-            _time.sleep(gap)
+        mixed[i * step: i * step + len(bell)] += bell
+
+    if greeting is not None:
+        mixed[offset: offset + len(greeting)] += greeting
+
+    peak = float(np.max(np.abs(mixed)))
+    if peak > 1.0:
+        mixed /= peak
+    sd.play(mixed, samplerate=SAMPLE_RATE)
+    sd.wait()
 
 
-# ── Button-driven recording and playback ─────────────────────────────────────
+# ── Clap-driven recording and playback ───────────────────────────────────────
 
-def record_push_to_talk(state: "ButtonState", filename: str) -> None:
-    """Records while all macro pad keys are held; stops the moment any is released."""
-    from buttons import read_char  # type: ignore
-
+def record_until_double_clap(session: "ClapSession", filename: str) -> None:
+    """Records continuously until ClapSession detects a double clap."""
     chunks: list[np.ndarray] = []
     q: queue.Queue = queue.Queue()
+    CHUNK_SIZE = int(SAMPLE_RATE * 0.05)
+
+    session._double.clear()
 
     def callback(indata, frames, time, status):
         q.put(indata.copy())
 
-    print("  [Recording... release to send]")
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", callback=callback):
-        while state.all_held:
-            ch = read_char(timeout=0.01)
-            if ch:
-                state.update(ch)
-            while not q.empty():
-                chunks.append(q.get_nowait())
-        # Short drain to catch the last buffer
-        _time.sleep(0.05)
-        while not q.empty():
-            chunks.append(q.get_nowait())
-
-    if chunks:
-        audio = np.concatenate(chunks, axis=0)
-        sf.write(filename, audio, SAMPLE_RATE)
-
-
-def record_until_double_clap(state: "ButtonState", filename: str) -> None:
-    """Records continuously until a second double-clap is detected."""
-    from buttons import read_char, ClapDetector  # type: ignore
-
-    chunks: list[np.ndarray] = []
-    q: queue.Queue = queue.Queue()
-    detector = ClapDetector()
-
-    def callback(indata, frames, time, status):
-        q.put(indata.copy())
-
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", callback=callback):
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                        blocksize=CHUNK_SIZE, callback=callback):
         while True:
-            ch = read_char(timeout=0.02)
-            if ch:
-                state.update(ch)
-            while not q.empty():
-                chunks.append(q.get_nowait())
-            if detector.update(state):
+            if session._double.is_set():
                 break
+            try:
+                chunks.append(q.get(timeout=0.1))
+            except queue.Empty:
+                pass
 
     if chunks:
-        audio = np.concatenate(chunks, axis=0)
-        sf.write(filename, audio, SAMPLE_RATE)
+        sf.write(filename, np.concatenate(chunks, axis=0), SAMPLE_RATE)
 
 
-def play_oracle_pcm_interruptible(pcm_bytes: bytes, state: "ButtonState") -> None:
-    """Plays oracle audio with effects. Pressing all 3 keys interrupts playback."""
-    from buttons import read_char  # type: ignore
+def record_question(session: "ClapSession", filename: str) -> bool:
+    """
+    Records speech using VAD. ClapSession runs concurrently on the same mic.
+    Returns True if a double clap is detected (signals end of session).
+    """
+    CHUNK_SIZE = int(SAMPLE_RATE * 0.05)
+    SILENCE_CHUNKS = int(1.5 / 0.05)  # 30 chunks @ 50ms each = 1.5s of silence
+    SPEECH_ONSET_CHUNKS = 2
+    CAL_CHUNKS = 20  # ~1 second of inline calibration before listening
 
+    session._double.clear()
+
+    q: queue.Queue = queue.Queue()
+    chunks: list[np.ndarray] = []
+    cal_rms: list[float] = []
+    speech_started = False
+    onset_count = 0
+    silence_count = 0
+    vad_threshold = 0.001
+
+    def callback(indata, frames, time, status):
+        q.put(indata.copy())
+
+    print("  [Listening...]")
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                        blocksize=CHUNK_SIZE, callback=callback):
+        while True:
+            if session._double.is_set():
+                return True
+
+            try:
+                chunk = q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if len(cal_rms) < CAL_CHUNKS:
+                cal_rms.append(float(np.sqrt(np.mean(chunk ** 2))))
+                if len(cal_rms) == CAL_CHUNKS:
+                    vad_threshold = max(float(np.mean(cal_rms)) * 2, 0.001)
+                continue
+
+            if not speech_started:
+                rms = float(np.sqrt(np.mean(chunk ** 2)))
+                if rms > vad_threshold:
+                    onset_count += 1
+                    if onset_count >= SPEECH_ONSET_CHUNKS:
+                        speech_started = True
+                        print("  [Speaking...]")
+                        chunks.append(chunk)
+                else:
+                    onset_count = 0
+            else:
+                chunks.append(chunk)
+                rms = float(np.sqrt(np.mean(chunk ** 2)))
+                if rms > vad_threshold:
+                    silence_count = 0
+                else:
+                    silence_count += 1
+                    if silence_count >= SILENCE_CHUNKS:
+                        break
+
+    if chunks:
+        sf.write(filename, np.concatenate(chunks, axis=0), SAMPLE_RATE)
+    return False
+
+
+def play_oracle_pcm_interruptible(pcm_bytes: bytes, session: "ClapSession") -> None:
+    """Plays oracle audio with effects. A double clap interrupts playback."""
     audio = _process_oracle_audio(pcm_bytes)
-
     done = threading.Event()
 
     def _play() -> None:
@@ -213,15 +290,14 @@ def play_oracle_pcm_interruptible(pcm_bytes: bytes, state: "ButtonState") -> Non
         sd.wait()
         done.set()
 
+    session._double.clear()
     t = threading.Thread(target=_play, daemon=True)
     t.start()
 
     while not done.is_set():
-        ch = read_char(timeout=0.02)
-        if ch:
-            state.update(ch)
-        if state.all_held:
+        if session._double.is_set():
             sd.stop()
             break
+        _time.sleep(0.02)
 
     t.join()
