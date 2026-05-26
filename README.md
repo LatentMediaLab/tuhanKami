@@ -23,7 +23,7 @@ The installation runs as a pseudo-ritual:
 ```
 Participant claps twice
        ↓
-  [clap.py]  ClapSession detects double clap
+  [clap.py]  ClapRitual detects double clap
        ↓
   [Microphone → audio.py]  record_until_double_clap (VAD)
        ↓  (participant claps twice to stop)
@@ -87,9 +87,9 @@ Create a `.env` file in the project root:
 ```
 ANTHROPIC_API_KEY=your_anthropic_key_here
 ELEVENLABS_API_KEY=your_elevenlabs_key_here
-TPLINK_HOST=000.000.0.000
-TPLINK_USERNAME=your_tplink_username
-TPLINK_PASSWORD=your_tplink_password
+TPLINK_HOST-0=000.000.0.000
+TPLINK_USERNAME-0=your_tplink_username
+TPLINK_PASSWORD-0=your_tplink_password
 ```
 
 ## Running the Installation
