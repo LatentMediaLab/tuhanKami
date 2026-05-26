@@ -1,20 +1,18 @@
 import asyncio
 import os
-import re
-
+import random
 import anthropic
 from dotenv import load_dotenv
 from elevenlabs.client import ElevenLabs
 from kasa import Discover
-
 from audio import (
-    record_push_to_talk,
     record_until_double_clap,
+    record_question,
     play_oracle_pcm_interruptible,
     play_bell,
     is_silent,
 )
-from buttons import ButtonState, ClapDetector, button_mode, read_char
+from clap import ClapSession
 from stt import transcribe
 from llm import ask_oracle
 from tts import clone_voice, speak, delete_voice
@@ -22,7 +20,7 @@ from tts import clone_voice, speak, delete_voice
 load_dotenv()
 
 
-def _entity_travel(on: bool) -> None:
+def entity_travel(on: bool) -> None:
     async def _run():
         dev = await Discover.discover_single(
             os.environ["TPLINK_HOST"],
@@ -42,81 +40,62 @@ def _entity_travel(on: bool) -> None:
 DEBUG_WAV = "debug.wav"
 PRAYER_WAV = "prayer.wav"
 QUESTION_WAV = "question.wav"
-
-GOODBYE_WORDS_EN = {"thank", "thanks", "end", "stop", "done", "finish", "exit", "quit"}
-GOODBYE_WORDS_JA = {"ありがとうございます", "ありがとう", "ありがと", "終わり", "おわり", "やめて", "終わります", "終了"}
-
-
-def should_end_session(question: str) -> bool:
-    words = set(re.findall(r"\b[a-z']+\b", question.lower()))
-    if words & GOODBYE_WORDS_EN:
-        return True
-    return any(phrase in question for phrase in GOODBYE_WORDS_JA)
-
-
-def _wait_for_release(state: ButtonState) -> None:
-    """Block until all macro keys are released."""
-    while state.all_held:
-        ch = read_char(timeout=0.02)
-        if ch:
-            state.update(ch)
-
-
-def _wait_for_press(state: ButtonState) -> None:
-    """Block until all macro keys are held."""
-    while not state.all_held:
-        ch = read_char(timeout=0.02)
-        if ch:
-            state.update(ch)
-
-
-def _wait_for_double_clap(state: ButtonState) -> None:
-    """Block until a double-clap is detected."""
-    detector = ClapDetector()
-    while not detector.update(state):
-        ch = read_char(timeout=0.02)
-        if ch:
-            state.update(ch)
+BELL_WAV1 = "bonsho/Bonsho04-1.mp3"
+BELL_WAV2 = "bonsho/Bonsho04-2.mp3"
+BELL_WAV3 = "bonsho/Bonsho04-3.mp3"
+BELL_WAV4 = "bonsho/Bonsho04-4.mp3"
 
 
 def run_session(
     anthropic_client: anthropic.Anthropic,
     eleven_client: ElevenLabs,
-    state: ButtonState,
+    session: ClapSession,
 ) -> None:
+    prayer_audio = PRAYER_WAV
+    bell_audio = random.choice([BELL_WAV1, BELL_WAV2, BELL_WAV3, BELL_WAV4])
 
     # ── PRAYER ────────────────────────────────────────────────────────────────
     if os.path.exists(DEBUG_WAV):
         print("\n  [Debug mode enabled: using existing recording in debug.wav]")
+        prayer_audio = DEBUG_WAV
     else:
-        print("\nClap twice (press all 3 keys twice) to begin your prayer...")
-        _wait_for_double_clap(state)
+        print("\nClap twice to begin your prayer...")
+        session.wait_for_double()
         print("  [Prayer recording started. Clap twice to finish.]\n")
-        record_until_double_clap(state, PRAYER_WAV)
+        record_until_double_clap(session, PRAYER_WAV)
 
     print("  [Transcribing...]")
-    prayer_text, _ = transcribe(PRAYER_WAV)
+    prayer_text, _ = transcribe(prayer_audio)
     print("  Prayer received.\n")
 
-    # ── VOICE CLONE ───────────────────────────────────────────────────────────
-    _entity_travel(True)
-    voice_id = clone_voice(eleven_client, PRAYER_WAV)
-    play_bell("bell.mp3")
-    _entity_travel(False)
-    print("\nHold all 3 keys while speaking. Release to send.\n")
+    # ── VOICE CLONE + GREETING ────────────────────────────────────────────────
+    entity_travel(True)
+    voice_id = clone_voice(eleven_client, prayer_audio)
+    entity_travel(False)
+    greeting = ask_oracle(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an oracle or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
+    greeting_pcm = speak(eleven_client, voice_id, greeting)
+    print(f"\n  They: {greeting}\n")
+    play_bell(bell_audio, greeting_pcm=greeting_pcm, greeting_offset_secs=4.0)
+    print("\nSpeak your question, or clap twice to end the session.\n")
 
     messages = []
 
     try:
         while True:
-            print("Hold all 3 keys to ask your question...")
+            ended = record_question(session, QUESTION_WAV)
 
-            # Ensure buttons are released before we start watching for a new press
-            _wait_for_release(state)
-            # Now wait for the user to press all 3 to start recording
-            _wait_for_press(state)
-
-            record_push_to_talk(state, QUESTION_WAV)
+            if ended:
+                print("  [They depart...]")
+                farewell = ask_oracle(
+                    anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text
+                )
+                print(f"\n  They: {farewell}\n")
+                entity_travel(True)
+                pcm = speak(eleven_client, voice_id, farewell)
+                play_oracle_pcm_interruptible(pcm, session)
+                entity_travel(False)
+                play_bell(bell_audio, times=3, overlap_secs=8.0)
+                break
 
             if not os.path.exists(QUESTION_WAV) or is_silent(QUESTION_WAV):
                 print("  (nothing captured — try again)\n")
@@ -131,20 +110,6 @@ def run_session(
                 continue
 
             print(f"  You: {question}")
-
-            if should_end_session(question):
-                print("  [They depart...]")
-                farewell = ask_oracle(
-                    anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text, language=q_lang
-                )
-                print(f"\n  They: {farewell}\n")
-                _entity_travel(True)
-                pcm = speak(eleven_client, voice_id, farewell)
-                play_oracle_pcm_interruptible(pcm, state)
-                play_bell("bell.mp3", times=3)
-                _entity_travel(False)
-                break
-
             print("  [They speak...]")
             answer = ask_oracle(
                 anthropic_client, messages, question, prayer_text, language=q_lang
@@ -152,14 +117,10 @@ def run_session(
             print(f"\n  They: {answer}\n")
 
             pcm = speak(eleven_client, voice_id, answer)
-            play_oracle_pcm_interruptible(pcm, state)
-
-            # If playback was interrupted by button press, wait for release
-            # so the next loop doesn't immediately start recording
-            _wait_for_release(state)
+            play_oracle_pcm_interruptible(pcm, session)
 
     finally:
-        _entity_travel(False)
+        entity_travel(False)
         delete_voice(eleven_client, voice_id)
         for path in [PRAYER_WAV, QUESTION_WAV]:
             if os.path.exists(path):
@@ -172,9 +133,8 @@ def main() -> None:
     eleven_client = ElevenLabs(api_key=os.environ["ELEVENLABS_API_KEY"])
 
     while True:
-        state = ButtonState()
-        with button_mode():
-            run_session(anthropic_client, eleven_client, state)
+        with ClapSession() as session:
+            run_session(anthropic_client, eleven_client, session)
 
 
 if __name__ == "__main__":
