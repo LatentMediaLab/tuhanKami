@@ -68,17 +68,17 @@ def run_ritual(
         record_until_double_clap(ritual, PRAYER_WAV)
 
     print("  [Transcribing...]")
+    entity_travel(True, 1)
     prayer_text, _ = transcribe(prayer_audio)
     print("  Prayer received.\n")
 
     # ── VOICE CLONE + GREETING ────────────────────────────────────────────────
-    entity_travel(True, 1)
     voice_id = clone_voice(eleven_client, prayer_audio)
     entity_travel(False, 1)
     greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
     greeting_pcm = speak(eleven_client, voice_id, greeting)
-    entity_travel(False, 2) 
     print(f"\n  They: {greeting}\n")
+    entity_travel(False, 2) 
     play_bell(bell_audio, greeting_pcm=greeting_pcm, greeting_offset_secs=3.0)
     print("\nSpeak your question, or clap twice to end the ritual.\n")
 
@@ -125,8 +125,6 @@ def run_ritual(
             play_entity_pcm_interruptible(pcm, ritual)
 
     finally:
-        entity_travel(False, 1)
-        entity_travel(True, 2)
         delete_voice(eleven_client, voice_id)
         for path in [PRAYER_WAV, QUESTION_WAV]:
             if os.path.exists(path):
