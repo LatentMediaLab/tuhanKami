@@ -152,7 +152,8 @@ def play_bell(
     bell_path: str,
     *,
     times: int = 1,
-    overlap_secs: float = 0.0,
+    overlap_secs_min: float = 0.0,
+    overlap_secs_max: float = 0.0,
     greeting_pcm: bytes | None = None,
     greeting_offset_secs: float = 2.0,
 ) -> None:
@@ -163,6 +164,7 @@ def play_bell(
     greeting_pcm: entity PCM to overlay, starting at greeting_offset_secs.
     """
     bell = load_bell(bell_path)
+    overlap_secs = np.random.uniform(overlap_secs_min, overlap_secs_max)
     step = int(overlap_secs * SAMPLE_RATE)
     total = step * (times - 1) + len(bell)
 

@@ -98,7 +98,7 @@ def run_ritual(
                 pcm = speak(eleven_client, voice_id, farewell)
                 play_entity_pcm_interruptible(pcm, ritual)
                 entity_travel(False, 1)
-                play_bell(bell_audio, times=3, overlap_secs=7.0)
+                play_bell(bell_audio, times=3, overlap_secs_min=5.5, overlap_secs_max=7.0)
                 entity_travel(True, 2)
                 break
 
