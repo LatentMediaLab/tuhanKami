@@ -54,6 +54,9 @@ def run_ritual(
     prayer_audio = PRAYER_WAV
     bell_audio = random.choice([BELL_WAV1, BELL_WAV2, BELL_WAV3, BELL_WAV4])
 
+    entity_travel(False, 1)  # Ensure device 1 (the fan) is off at the start of the ritual
+    entity_travel(True, 2)   # Ensure device 2 (the light) is on at the start of the ritual
+
     # ── PRAYER ────────────────────────────────────────────────────────────────
     if os.path.exists(DEBUG_WAV):
         print("\n  [Debug mode enabled: using existing recording in debug.wav]")
@@ -72,6 +75,7 @@ def run_ritual(
     entity_travel(True, 1)
     voice_id = clone_voice(eleven_client, prayer_audio)
     entity_travel(False, 1)
+    entity_travel(False, 2) 
     greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
     greeting_pcm = speak(eleven_client, voice_id, greeting)
     print(f"\n  They: {greeting}\n")
@@ -121,6 +125,7 @@ def run_ritual(
 
     finally:
         entity_travel(False, 1)
+        entity_travel(True, 2)
         delete_voice(eleven_client, voice_id)
         for path in [PRAYER_WAV, QUESTION_WAV]:
             if os.path.exists(path):
