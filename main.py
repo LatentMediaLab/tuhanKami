@@ -24,8 +24,8 @@ def entity_travel(on: bool, device: int) -> None:
     async def _run():
         dev = await Discover.discover_single(
             os.environ["TPLINK_HOST-" + str(device)],
-            username=os.environ["TPLINK_USERNAME-" + str(device)],
-            password=os.environ["TPLINK_PASSWORD-" + str(device)],
+            username=os.environ["TPLINK_USERNAME"],
+            password=os.environ["TPLINK_PASSWORD"],
         )
         if on:
             await dev.turn_on()
