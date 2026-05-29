@@ -17,7 +17,7 @@ from stt import transcribe
 from llm import ask_entity
 from tts import clone_voice, speak, delete_voice
 
-load_dotenv()
+load_dotenv("venv/venv")
 
 
 def entity_travel(on: bool, device: int) -> None:
@@ -54,8 +54,8 @@ def run_ritual(
     prayer_audio = PRAYER_WAV
     bell_audio = random.choice([BELL_WAV1, BELL_WAV2, BELL_WAV3, BELL_WAV4])
 
-    entity_travel(False, 1)  # Ensure device 1 (the fan) is off at the start of the ritual
-    entity_travel(True, 2)   # Ensure device 2 (the light) is on at the start of the ritual
+    # entity_travel(False, 1)  # Ensure device 1 (the fan) is off at the start of the ritual
+    # entity_travel(True, 2)   # Ensure device 2 (the light) is on at the start of the ritual
 
     # ── PRAYER ────────────────────────────────────────────────────────────────
     if os.path.exists(DEBUG_WAV):
@@ -68,17 +68,17 @@ def run_ritual(
         record_until_double_clap(ritual, PRAYER_WAV)
 
     print("  [Transcribing...]")
-    entity_travel(True, 1)
+    # entity_travel(True, 1)
     prayer_text, _ = transcribe(prayer_audio)
     print("  Prayer received.\n")
 
     # ── VOICE CLONE + GREETING ────────────────────────────────────────────────
     voice_id = clone_voice(eleven_client, prayer_audio)
-    entity_travel(False, 1)
+    # entity_travel(False, 1)
     greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
     greeting_pcm = speak(eleven_client, voice_id, greeting)
     print(f"\n  They: {greeting}\n")
-    entity_travel(False, 2) 
+    # entity_travel(False, 2) 
     play_bell(bell_audio, greeting_pcm=greeting_pcm, greeting_offset_secs=3.0)
     print("\nSpeak your question, or clap twice to end the ritual.\n")
 
@@ -94,12 +94,12 @@ def run_ritual(
                     anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text
                 )
                 print(f"\n  They: {farewell}\n")
-                entity_travel(True, 1)
+                # entity_travel(True, 1)
                 pcm = speak(eleven_client, voice_id, farewell)
                 play_entity_pcm_interruptible(pcm, ritual)
-                entity_travel(False, 1)
+                # entity_travel(False, 1)
                 play_bell(bell_audio, times=3, overlap_secs_min=5.5, overlap_secs_max=7.0)
-                entity_travel(True, 2)
+                # entity_travel(True, 2)
                 break
 
             if not os.path.exists(QUESTION_WAV) or is_silent(QUESTION_WAV):

@@ -64,6 +64,7 @@ Participant claps twice
 - Python 3.12+
 - macOS
 - PortAudio (`brew install portaudio`)
+- FFmpeg (`brew install ffmpeg`)
 - A working microphone and audio output
 - A TP-Link Tapo smart plug on the same local network
 - An [Anthropic API key](https://console.anthropic.com)
@@ -82,7 +83,7 @@ pip install -r requirements.txt
 
 ### Environment variables
 
-Create a `.env` file in the project root:
+Create a `venv` file at `venv/venv`:
 
 ```
 ANTHROPIC_API_KEY=your_anthropic_key_here

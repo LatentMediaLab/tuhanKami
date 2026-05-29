@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import queue
-import subprocess
 import threading
 import time as _time
 from typing import TYPE_CHECKING
