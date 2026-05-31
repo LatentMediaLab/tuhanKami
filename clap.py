@@ -45,7 +45,7 @@ class InlineClapDetector:
 
 class ClapRitual:
     """
-    Background clap detector using sounddevice. Replaces buttons.py.
+    Background clap detector using sounddevice.
 
     Runs a continuous mic stream via sounddevice (no PyAudio). On macOS, Core Audio
     allows concurrent input streams, so recording functions can open their own streams
@@ -60,6 +60,7 @@ class ClapRitual:
 
     def __init__(self) -> None:
         self._double = threading.Event()
+        self.abort = threading.Event()
         self._running = False
         self._thread: threading.Thread | None = None
 
@@ -93,10 +94,13 @@ class ClapRitual:
             self._thread.join(timeout=2)
             self._thread = None
 
-    def wait_for_double(self) -> None:
-        """Block until a double clap is heard."""
+    def wait_for_double(self) -> bool:
+        """Block until a double clap is heard. Returns False if aborted."""
         self._double.clear()
-        self._double.wait()
+        while not self.abort.is_set():
+            if self._double.wait(timeout=0.1):
+                return True
+        return False
 
     def __enter__(self) -> "ClapRitual":
         self.start()
