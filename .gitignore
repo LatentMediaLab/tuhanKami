@@ -30,5 +30,6 @@ desktop.ini
 # Logs
 *.log
 
-Test/
+test/
+assets/
 debug.wav
