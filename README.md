@@ -100,15 +100,25 @@ source .venv/bin/activate
 python main.py
 ```
 
-After each session ends, a new one begins immediately, ready for the next participant.
+After each session ends, the program returns to the idle state and waits for the operator to press `o` again before the next participant can begin.
 
 ### Session flow for the operator
 
 1. Start `python main.py` before participants arrive.
-2. The terminal will display `Clap twice to begin your prayer...`
-3. The participant interacts independently from this point — no hardware other than the microphone is needed.
-4. When the session ends (participant claps twice), `[Session cleared.]` appears and the loop resets.
-5. Press `Ctrl-C` to stop the program.
+2. The terminal will display `Press 'o' to begin the ritual...`
+3. When the next participant is ready, press **`o`** on the keyboard. The terminal will display `Clap twice to begin your prayer...`
+4. The participant interacts independently from this point — no hardware other than the microphone is needed.
+5. When the session ends (participant claps twice), `[Ritual cleared.]` appears and the program returns to step 2.
+6. If a false positive or interruption occurs at any point, press **`i`** or **`p`** to immediately reset the ritual back to step 2.
+7. Press `Ctrl-C` to stop the program.
+
+### Keyboard controls
+
+| Key     | Effect                                                                 |
+| ------- | ---------------------------------------------------------------------- |
+| `o`     | Unlocks the ritual — allows clap detection to begin                    |
+| `i`/`p` | Interrupts and resets the ritual at any stage, returning to idle state |
+| `Ctrl-C`| Exits the program                                                      |
 
 ### Clap interaction summary
 
