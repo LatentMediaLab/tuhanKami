@@ -66,7 +66,6 @@ Participant claps twice
 | `llm.py` | Claude API calls: Entity response + echo text generation |
 | `tts.py` | ElevenLabs: voice cloning, synthesis, deletion |
 | `prompts.py` | Entity system prompt template (the Entity's persona and rules) |
-| `debug_audio.py` | Standalone audio test harness — skips prayer recording and voice cloning |
 
 ## Hardware
 
@@ -175,14 +174,6 @@ After each session ends, the program returns to the idle state and waits for the
 
 If `debug.wav` exists in the project directory when the session starts, the program will skip the prayer recording step and use that file directly. Useful for testing the Entity dialogue without repeating the prayer recording each time.
 
-For full audio chain testing without a live ritual (no prayer recording or voice cloning needed), use the dedicated debug harness:
-
-```bash
-# Add to venv/venv first:
-#   DEBUG_VOICE_ID_MAIN=<id from a previous real session>
-#   DEBUG_VOICE_ID_ECHO=<id from a previous real session>
-python3 debug_audio.py
-```
 
 ## Entity Behaviour
 
