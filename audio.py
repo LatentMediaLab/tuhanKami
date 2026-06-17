@@ -145,43 +145,44 @@ def build_main_audio(main_pcm: bytes) -> np.ndarray:
 
 class SpeakerPlayer:
     """
-    Persistent output stream for one speaker channel with layered mixing.
+    Persistent output stream for one audio device, with per-channel layered mixing.
 
-    Layers play *once* (not looped) — when a clip ends it is removed.
-    reverse_reverb's built-in post-pad provides natural fade-out decay.
-    When a new clip arrives on an occupied speaker (halve=True), existing
-    layer volumes are multiplied by 0.4 and layers below VOL_THRESHOLD are pruned.
-    master is a shared list[float] so BackgroundEchoPlayer.set_volume() is
-    reflected here without any locking overhead.
+    Opens a SINGLE sd.OutputStream per device regardless of how many channels are
+    used, avoiding conflicts when two channels share the same hardware output.
+    Each channel is mixed independently and written as one multi-channel frame.
+
+    Layers play *once* — when a clip ends it is removed. reverse_reverb's post-pad
+    provides natural trailing decay. master is a shared list[float] so
+    BackgroundEchoPlayer.set_volume() affects all devices instantly.
     """
 
     CHUNK = int(SAMPLE_RATE * 0.05)   # 50ms write buffer
-    MAX_LAYERS = 4                     # oldest layer dropped if exceeded
+    MAX_LAYERS = 4                     # oldest layer dropped per channel if exceeded
     VOL_THRESHOLD = 0.05              # prune layers quieter than this
 
     def __init__(
         self,
         device: int | str | None,
-        channel: int,
         num_channels: int,
         master: list,
     ) -> None:
         self.device = device
-        self.channel = channel          # which channel index to write into (0=L, 1=R)
         self.num_channels = num_channels
         self.master = master            # shared [float] — index 0 is the volume multiplier
-        self.pending: queue.Queue = queue.Queue()
+        # One pending queue and one layer list per channel
+        self.pending: list[queue.Queue] = [queue.Queue() for _ in range(num_channels)]
+        self.layers: list[list[dict]]   = [[] for _ in range(num_channels)]
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
-        self.has_audio = False          # True while any layer is playing
 
-    def is_empty(self) -> bool:
-        # True when no audio layers are currently playing.
-        return not self.has_audio
+    def feed(self, channel: int, audio: np.ndarray) -> None:
+        # Queue a clip on the given channel. It will loop until halved below VOL_THRESHOLD.
+        self.pending[channel].put(audio)
 
-    def feed(self, audio: np.ndarray, halve: bool = False) -> None:
-        # Queue a new audio clip. halve=True dims existing layers before adding.
-        self.pending.put((audio, halve))
+    def halve_all(self) -> None:
+        # Dim all layers on every channel by 40% (None sentinel = halve-only request).
+        for ch in range(self.num_channels):
+            self.pending[ch].put(None)
 
     def start(self) -> None:
         # Open the stream thread. Call once before feeding audio.
@@ -196,19 +197,8 @@ class SpeakerPlayer:
             self.thread.join(timeout=3)
             self.thread = None
 
-    def write(self, stream: sd.OutputStream, mono: np.ndarray) -> None:
-        # Write a mono chunk to the correct channel of a potentially stereo stream.
-        if self.num_channels == 1:
-            stream.write(mono.reshape(-1, 1))
-        else:
-            # Build a stereo frame and write only into self.channel; the other stays 0
-            frame = np.zeros((len(mono), self.num_channels), dtype="float32")
-            frame[:, self.channel] = mono
-            stream.write(frame)
-
     def loop(self) -> None:
-        # Main audio thread: drain pending queue, mix active layers, write chunks.
-        layers: list[dict] = []
+        # Main audio thread: mix all channels into one frame per tick and write it.
         try:
             with sd.OutputStream(
                 samplerate=SAMPLE_RATE,
@@ -217,92 +207,95 @@ class SpeakerPlayer:
                 dtype="float32",
             ) as stream:
                 while not self.stop_event.is_set():
-                    # Pull all newly queued clips in one go
-                    try:
-                        while True:
-                            audio, halve = self.pending.get_nowait()
-                            if halve:
-                                # Dim existing layers and drop any that are now too quiet
-                                for layer in layers:
-                                    layer["vol"] *= 0.4
-                                layers = [l for l in layers if l["vol"] >= self.VOL_THRESHOLD]
-                            layers.append({"audio": audio, "pos": 0, "vol": 1.0})
-                            if len(layers) > self.MAX_LAYERS:
-                                layers = layers[-self.MAX_LAYERS:]
-                    except queue.Empty:
-                        pass
+                    frame = np.zeros((self.CHUNK, self.num_channels), dtype="float32")
 
-                    self.has_audio = bool(layers)
+                    for ch in range(self.num_channels):
+                        # Drain all pending items: None = halve request, ndarray = new clip
+                        try:
+                            while True:
+                                item = self.pending[ch].get_nowait()
+                                if item is None:
+                                    # Halve all layers and prune anything that fell silent
+                                    for layer in self.layers[ch]:
+                                        layer["vol"] *= 0.4
+                                    self.layers[ch] = [l for l in self.layers[ch] if l["vol"] >= self.VOL_THRESHOLD]
+                                else:
+                                    self.layers[ch].append({"audio": item, "pos": 0, "vol": 1.0})
+                                    if len(self.layers[ch]) > self.MAX_LAYERS:
+                                        self.layers[ch] = self.layers[ch][-self.MAX_LAYERS:]
+                        except queue.Empty:
+                            pass
 
-                    if not layers:
-                        # Write silence to keep the stream alive and prevent underruns
-                        self.write(stream, np.zeros(self.CHUNK, dtype="float32"))
-                        continue
+                        if not self.layers[ch]:
+                            continue  # leave this channel silent (zeros already in frame)
 
-                    # Mix all active layers; remove any that have finished playing
-                    mixed = np.zeros(self.CHUNK, dtype="float32")
-                    active = []
-                    for layer in layers:
-                        audio = layer["audio"]
-                        pos = layer["pos"]
-                        end = min(pos + self.CHUNK, len(audio))
-                        chunk = audio[pos:end]
-                        if len(chunk) < self.CHUNK:
-                            chunk = np.pad(chunk, (0, self.CHUNK - len(chunk)))
-                        mixed += chunk * layer["vol"]
-                        if end < len(audio):       # still has samples left
-                            layer["pos"] = end
-                            active.append(layer)
-                        # else: clip finished — drop it (play-once semantics)
-                    layers = active
+                        # Mix active layers for this channel; clips loop until vol hits threshold
+                        mixed = np.zeros(self.CHUNK, dtype="float32")
+                        for layer in self.layers[ch]:
+                            pos = layer["pos"]
+                            end = min(pos + self.CHUNK, len(layer["audio"]))
+                            chunk = layer["audio"][pos:end]
+                            if len(chunk) < self.CHUNK:
+                                chunk = np.pad(chunk, (0, self.CHUNK - len(chunk)))
+                            mixed += chunk * layer["vol"]
+                            # Loop: reset to start instead of dropping when clip ends
+                            layer["pos"] = end if end < len(layer["audio"]) else 0
 
-                    # Apply master volume and prevent clipping
-                    mixed *= self.master[0]
-                    peak = float(np.max(np.abs(mixed)))
-                    if peak > 1.0:
-                        mixed /= peak
-                    self.write(stream, mixed)
+                        mixed *= self.master[0]
+                        peak = float(np.max(np.abs(mixed)))
+                        if peak > 1.0:
+                            mixed /= peak
+                        frame[:, ch] = mixed
+
+                    stream.write(frame)
 
         except Exception as e:
-            print(f"  [audio/echo speaker ({self.device}ch{self.channel}) error: {e}]")
+            print(f"  [audio/echo device {self.device} error: {e}]")
 
 
 class BackgroundEchoPlayer:
     """
-    Dispatches echo clips across all ECHO_OUTPUTS speakers.
+    Dispatches echo clips across all ECHO_OUTPUTS channels.
 
-    Prefers an empty speaker so each echo comes from a different position.
-    If all speakers are busy, picks one at random and halves its existing layers
-    before adding the new clip. master volume is shared with all SpeakerPlayers
-    so set_volume() affects all of them instantly.
+    Groups channels by device so each device has exactly one SpeakerPlayer
+    (= one sd.OutputStream), preventing stream conflicts on shared hardware outputs.
+    Each clip loops until it is halved below VOL_THRESHOLD. On every new clip, ALL
+    existing layers across ALL channels are halved so old echoes fade as new ones arrive.
+    master volume is shared across all devices so set_volume() affects everything instantly.
     """
 
     def __init__(self, echo_volume: float = 0.65) -> None:
         self.echo_volume = echo_volume  # base gain applied before reverse_reverb
-        self.master: list = [1.0]       # shared volume multiplier for all speakers
-        self.speakers = [
-            SpeakerPlayer(dev, ch, nch, self.master)
+        self.master: list = [1.0]       # shared volume multiplier for all devices
+
+        # One SpeakerPlayer per unique (device, num_channels) pair
+        seen: dict[tuple, SpeakerPlayer] = {}
+        for dev, ch, nch in ECHO_OUTPUTS:
+            key = (dev, nch)
+            if key not in seen:
+                seen[key] = SpeakerPlayer(dev, nch, self.master)
+        self.device_players = seen
+
+        # Routing slots: (player, channel_index) for each entry in ECHO_OUTPUTS
+        self.slots: list[tuple[SpeakerPlayer, int]] = [
+            (self.device_players[(dev, nch)], ch)
             for dev, ch, nch in ECHO_OUTPUTS
         ]
 
     def feed(self, echo_pcm: bytes) -> None:
-        # Process echo PCM and route it to the best available speaker.
+        # Process echo PCM, dim all existing echoes, then add new clip to a random slot.
         audio = reverse_reverb(process_entity_audio(echo_pcm) * self.echo_volume)
-        indices = list(range(len(self.speakers)))
-        random.shuffle(indices)
-        # Prefer any empty speaker; fall back to a random occupied one
-        for i in indices:
-            if self.speakers[i].is_empty():
-                self.speakers[i].feed(audio, halve=False)
-                return
-        self.speakers[random.choice(indices)].feed(audio, halve=True)
+        for player in self.device_players.values():
+            player.halve_all()
+        player, ch = random.choice(self.slots)
+        player.feed(ch, audio)
 
     def set_volume(self, v: float) -> None:
-        # Set master volume (0.0–1.0) for all speakers instantly.
+        # Set master volume (0.0–1.0) for all devices instantly.
         self.master[0] = max(0.0, min(1.0, v))
 
     def fade_out(self, duration_secs: float = 20.0) -> None:
-        # Smoothly fade all speakers to silence over duration_secs (non-blocking).
+        # Smoothly fade all devices to silence over duration_secs (non-blocking).
         start_vol = self.master[0]
         steps = max(1, int(duration_secs / 0.05))
 
@@ -316,12 +309,12 @@ class BackgroundEchoPlayer:
         threading.Thread(target=do_fade, daemon=True).start()
 
     def start(self) -> None:
-        for s in self.speakers:
-            s.start()
+        for player in self.device_players.values():
+            player.start()
 
     def stop(self) -> None:
-        for s in self.speakers:
-            s.stop()
+        for player in self.device_players.values():
+            player.stop()
 
     def __enter__(self) -> "BackgroundEchoPlayer":
         self.start()
