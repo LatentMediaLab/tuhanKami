@@ -283,12 +283,22 @@ class BackgroundEchoPlayer:
         ]
 
     def feed(self, echo_pcm: bytes) -> None:
-        # Process echo PCM, dim all existing echoes, then add new clip to a random slot.
-        audio = reverse_reverb(process_entity_audio(echo_pcm) * self.echo_volume)
-        for player in self.device_players.values():
-            player.halve_all()
-        player, ch = random.choice(self.slots)
-        player.feed(ch, audio)
+        """
+        Process echo PCM in a background thread so the caller isn't blocked.
+        Halving happens inside the thread so it fires when the clip is ready, not before.
+        """
+        slots = self.slots
+        device_players = self.device_players
+        echo_volume = self.echo_volume
+
+        def _process() -> None:
+            audio = reverse_reverb(process_entity_audio(echo_pcm) * echo_volume)
+            for player in device_players.values():
+                player.halve_all()
+            player, ch = random.choice(slots)
+            player.feed(ch, audio)
+
+        threading.Thread(target=_process, daemon=True).start()
 
     def set_volume(self, v: float) -> None:
         # Set master volume (0.0–1.0) for all devices instantly.
