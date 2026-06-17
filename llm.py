@@ -77,7 +77,7 @@ def ask_entity(
     messages: list,
     question: str,
     prayer_text: str,
-    language: str = "en",
+    language: str,
 ) -> str:
     """
     Generate the Entity's response to the seeker's question.
