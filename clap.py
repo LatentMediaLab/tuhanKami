@@ -11,11 +11,18 @@ LOWCUT = 300
 HIGHCUT = 3000
 SAMPLE_RATE = 44100
 
+"""
+Dedicated input device for clap detection (wired mic).
+Run: python -c "import sounddevice as sd; print(sd.query_devices())"
+to list available devices. None = system default.
+"""
+CLAP_INPUT: int | str | None = 4
+
 
 class InlineClapDetector:
     # Detects claps in audio chunks using a bandpass filter and peak detection.
-    PEAK = 0.5      # minimum filtered peak to count as a clap
-    DEBOUNCE = 0.15 # seconds to ignore after a detected clap (prevents double-counting one clap)
+    PEAK = 0.15    # minimum filtered peak to count as a clap
+    DEBOUNCE = 0.2 # seconds to ignore after a detected clap (prevents double-counting one clap)
     WINDOW = 0.8    # seconds within which two claps must land to count as a double clap
 
     def __init__(self, sample_rate: int = SAMPLE_RATE) -> None:
@@ -83,7 +90,7 @@ class ClapRitual:
         def callback(indata, frames, t, status):
             q.put(indata.copy())
 
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+        with sd.InputStream(samplerate=SAMPLE_RATE, device=CLAP_INPUT, channels=1, dtype="float32",
                             blocksize=chunk_size, callback=callback):
             while self.running:
                 try:

@@ -19,16 +19,24 @@ if TYPE_CHECKING:
 SAMPLE_RATE = 16000
 # Prayer recording uses 44100 Hz for better voice clone quality
 PRAYER_SAMPLE_RATE = 44100
-# sounddevice device index for the main bone-conducting headset output
-MAIN_OUTPUT: int | str | None = 3
+
+# VAD constants used by record_question — also imported by debug_calibrate.py
+VAD_CAL_CHUNKS    = 20    # ~1 second of ambient noise to calibrate the threshold
+VAD_MULTIPLIER    = 2   # speech threshold = ambient RMS × this
+VAD_ONSET_CHUNKS  = 2     # consecutive loud chunks required before recording starts
+VAD_SILENCE_SECS  = 1.5   # seconds of silence that ends the recording
+# sounddevice device index for the main earpiece output
+MAIN_OUTPUT: int | str | None = 1
+# Input device for prayer and question recording (earpiece mic). None = system default.
+SPEECH_INPUT: int | str | None = 0
 
 # Each tuple: (device_index, channel_index, total_channels_on_stream)
 # channel_index selects L (0) or R (1) within a stereo pair.
 ECHO_OUTPUTS: list[tuple[int | str | None, int, int]] = [
-    (5, 0, 2),  # speaker 1
-    (5, 1, 2),  # speaker 2
-    #(5, 0, 2),  # speaker 3
-    #(5, 1, 2),  # speaker 4
+    (7, 0, 2),  # speaker 1
+    (7, 1, 2),  # speaker 2
+    (5, 0, 2),  # speaker 3
+    (5, 1, 2),  # speaker 4
     #(5, 0, 2),  # speaker 5
     #(5, 1, 2),  # speaker 6
 ]
@@ -438,7 +446,7 @@ def record_until_double_clap(ritual: "ClapRitual", filename: str) -> None:
     def callback(indata, _frames, _t, _status):
         q.put(indata.copy())
 
-    with sd.InputStream(samplerate=PRAYER_SAMPLE_RATE, channels=1, dtype="float32",
+    with sd.InputStream(samplerate=PRAYER_SAMPLE_RATE, device=SPEECH_INPUT, channels=1, dtype="float32",
                         blocksize=CHUNK_SIZE, callback=callback):
         while True:
             if ritual.double.is_set():
@@ -457,16 +465,14 @@ def record_question(ritual: "ClapRitual", filename: str) -> bool:
     Record a question using voice activity detection. Returns True if session-end double clap fired.
 
     Pipeline:
-      1. Calibrate ambient noise level over CAL_CHUNKS (≈1 second).
-      2. Wait for SPEECH_ONSET_CHUNKS consecutive loud chunks (prevents false triggers).
-      3. Record until SILENCE_CHUNKS consecutive quiet chunks (end of speech).
+      1. Calibrate ambient noise level over VAD_CAL_CHUNKS (≈1 second).
+      2. Wait for VAD_ONSET_CHUNKS consecutive loud chunks (prevents false triggers).
+      3. Record until VAD_SILENCE_SECS of consecutive quiet chunks.
       4. Save to filename at SAMPLE_RATE.
     paused event discards current recording state so the operator can intervene.
     """
-    CHUNK_SIZE = int(SAMPLE_RATE * 0.05)
-    SILENCE_CHUNKS = int(1.5 / 0.05)       # 1.5 s of silence ends recording
-    SPEECH_ONSET_CHUNKS = 2                 # 2 consecutive loud chunks to start recording
-    CAL_CHUNKS = 20                         # calibration window (~1 second)
+    CHUNK_SIZE     = int(SAMPLE_RATE * 0.05)
+    SILENCE_CHUNKS = int(VAD_SILENCE_SECS / 0.05)
 
     ritual.double.clear()
 
@@ -482,7 +488,7 @@ def record_question(ritual: "ClapRitual", filename: str) -> bool:
         q.put(indata.copy())
 
     print("  [Listening...]")
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+    with sd.InputStream(samplerate=SAMPLE_RATE, device=SPEECH_INPUT, channels=1, dtype="float32",
                         blocksize=CHUNK_SIZE, callback=callback):
         while True:
             if ritual.double.is_set():
@@ -494,10 +500,10 @@ def record_question(ritual: "ClapRitual", filename: str) -> bool:
                 continue
 
             # Phase 1: calibrate noise floor
-            if len(cal_rms) < CAL_CHUNKS:
+            if len(cal_rms) < VAD_CAL_CHUNKS:
                 cal_rms.append(float(np.sqrt(np.mean(chunk ** 2))))
-                if len(cal_rms) == CAL_CHUNKS:
-                    vad_threshold = max(float(np.mean(cal_rms)) * 2, 0.001)
+                if len(cal_rms) == VAD_CAL_CHUNKS:
+                    vad_threshold = max(float(np.mean(cal_rms)) * VAD_MULTIPLIER, 0.001)
                 continue
 
             # Operator pause: discard everything and restart
@@ -513,7 +519,7 @@ def record_question(ritual: "ClapRitual", filename: str) -> bool:
                 rms = float(np.sqrt(np.mean(chunk ** 2)))
                 if rms > vad_threshold:
                     onset_count += 1
-                    if onset_count >= SPEECH_ONSET_CHUNKS:
+                    if onset_count >= VAD_ONSET_CHUNKS:
                         speech_started = True
                         print("  [Speaking...]")
                         chunks.append(chunk)
