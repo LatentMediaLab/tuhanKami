@@ -5,6 +5,7 @@ import select
 import sys
 import termios
 import threading
+import time
 import tty
 import anthropic
 from dotenv import load_dotenv
@@ -199,14 +200,25 @@ def main() -> None:
                 )
                 ritual_thread.start()
 
+                last_o = 0.0
                 while ritual_thread.is_alive():
                     key = _read_key()
                     if key in ('i', 'p'):
                         print("\n  [Ritual interrupted. Restarting...]\n")
                         ritual.abort.set()
                         ritual._double.set()  # unblock any audio loop waiting on double
+                        ritual.paused.clear()
                         ritual_thread.join()
                         break
+                    elif key == 'o':
+                        if not ritual.paused.is_set():
+                            print("\n  [Recording paused]\n")
+                            ritual.paused.set()
+                        last_o = time.monotonic()
+
+                    if ritual.paused.is_set() and time.monotonic() - last_o > 0.15:
+                        ritual.paused.clear()
+                        print("\n  [Recording resumed]\n")
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)

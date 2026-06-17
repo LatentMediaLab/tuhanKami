@@ -61,6 +61,7 @@ class ClapRitual:
     def __init__(self) -> None:
         self._double = threading.Event()
         self.abort = threading.Event()
+        self.paused = threading.Event()
         self._running = False
         self._thread: threading.Thread | None = None
 

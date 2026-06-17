@@ -258,6 +258,13 @@ def record_question(ritual: "ClapRitual", filename: str) -> bool:
                     vad_threshold = max(float(np.mean(cal_rms)) * 2, 0.001)
                 continue
 
+            if ritual.paused.is_set():
+                speech_started = False
+                onset_count = 0
+                silence_count = 0
+                chunks.clear()
+                continue
+
             if not speech_started:
                 rms = float(np.sqrt(np.mean(chunk ** 2)))
                 if rms > vad_threshold:
