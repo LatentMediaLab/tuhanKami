@@ -6,39 +6,43 @@ import numpy as np
 import sounddevice as sd
 from scipy.signal import butter, sosfilt
 
+# Bandpass filter range that captures hand-clap transients
 LOWCUT = 300
 HIGHCUT = 3000
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 44100
 
 
 class InlineClapDetector:
-    """Detects claps in audio chunks using a bandpass filter and peak detection."""
-    PEAK = 0.2
-    DEBOUNCE = 0.15
-    WINDOW = 0.8
+    # Detects claps in audio chunks using a bandpass filter and peak detection.
+    PEAK = 0.5      # minimum filtered peak to count as a clap
+    DEBOUNCE = 0.15 # seconds to ignore after a detected clap (prevents double-counting one clap)
+    WINDOW = 0.8    # seconds within which two claps must land to count as a double clap
 
     def __init__(self, sample_rate: int = SAMPLE_RATE) -> None:
-        self._sos = butter(4, [LOWCUT, HIGHCUT], btype="band", fs=sample_rate, output="sos")
-        self._times: list[float] = []
-        self._last = 0.0
+        # Pre-compute the bandpass filter coefficients once at startup
+        self.sos = butter(4, [LOWCUT, HIGHCUT], btype="band", fs=sample_rate, output="sos")
+        self.times: list[float] = []  # timestamps of recent individual claps
+        self.last = 0.0               # timestamp of the last accepted clap (for debouncing)
 
-    def _clap_in_chunk(self, chunk: np.ndarray) -> bool:
-        filtered = sosfilt(self._sos, chunk.flatten())
+    def clap_in_chunk(self, chunk: np.ndarray) -> bool:
+        # True if this audio chunk contains a clap above the peak threshold.
+        filtered = sosfilt(self.sos, chunk.flatten())
         peak = float(np.max(np.abs(filtered)))
         now = time.monotonic()
-        if peak > self.PEAK and now - self._last > self.DEBOUNCE:
-            self._last = now
+        if peak > self.PEAK and now - self.last > self.DEBOUNCE:
+            self.last = now
             return True
         return False
 
     def feed_double(self, chunk: np.ndarray) -> bool:
-        """Returns True when a double clap within WINDOW seconds is detected."""
-        if self._clap_in_chunk(chunk):
+        # Returns True when a double clap within WINDOW seconds is detected.
+        if self.clap_in_chunk(chunk):
             now = time.monotonic()
-            self._times = [t for t in self._times if now - t <= self.WINDOW]
-            self._times.append(now)
-            if len(self._times) >= 2:
-                self._times.clear()
+            # Keep only claps within the detection window
+            self.times = [t for t in self.times if now - t <= self.WINDOW]
+            self.times.append(now)
+            if len(self.times) >= 2:
+                self.times.clear()
                 return True
         return False
 
@@ -54,52 +58,58 @@ class ClapRitual:
     Use as a context manager:
         with ClapRitual() as ritual:
             ritual.wait_for_double()
+
+    Events:
+      double  — set when a double clap is detected (auto-cleared by wait_for_double)
+      abort   — set by the operator to stop the ritual immediately
+      paused  — set while the operator is holding the pause key (recording discarded)
     """
 
-    CHUNK_SECS = 0.05
+    CHUNK_SECS = 0.05  # size of each audio chunk fed to the detector
 
     def __init__(self) -> None:
-        self._double = threading.Event()
+        self.double = threading.Event()
         self.abort = threading.Event()
         self.paused = threading.Event()
-        self._running = False
-        self._thread: threading.Thread | None = None
+        self.running = False
+        self.thread: threading.Thread | None = None
 
-    def _loop(self) -> None:
+    def loop(self) -> None:
+        # Mic listener thread: feeds chunks to the detector and sets self.double on match.
         q: queue.Queue = queue.Queue()
         detector = InlineClapDetector(SAMPLE_RATE)
         chunk_size = int(SAMPLE_RATE * self.CHUNK_SECS)
 
-        def callback(indata, frames, time, status):
+        def callback(indata, frames, t, status):
             q.put(indata.copy())
 
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                             blocksize=chunk_size, callback=callback):
-            while self._running:
+            while self.running:
                 try:
                     chunk = q.get(timeout=0.1)
                     if detector.feed_double(chunk):
-                        self._double.set()
+                        self.double.set()
                 except queue.Empty:
                     pass
 
     def start(self) -> None:
-        if not self._running:
-            self._running = True
-            self._thread = threading.Thread(target=self._loop, daemon=True)
-            self._thread.start()
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self.loop, daemon=True)
+            self.thread.start()
 
     def stop(self) -> None:
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=2)
-            self._thread = None
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=2)
+            self.thread = None
 
     def wait_for_double(self) -> bool:
-        """Block until a double clap is heard. Returns False if aborted."""
-        self._double.clear()
+        # Block until a double clap is heard. Returns False if the ritual is aborted instead.
+        self.double.clear()
         while not self.abort.is_set():
-            if self._double.wait(timeout=0.1):
+            if self.double.wait(timeout=0.1):
                 return True
         return False
 
