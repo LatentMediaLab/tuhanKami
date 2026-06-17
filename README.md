@@ -10,7 +10,7 @@ The installation runs as a pseudo-ritual:
 
 1. **Prayer** — The participant speaks a prayer aloud. The Entity learns the seeker's voice and their innermost concerns from what they offer to god. A double clap begins and ends the recording.
 
-2. **Transfiguration** — The prayer recording is uploaded to ElevenLabs, cloned twice, and one clone is remixed. Transformed into something deeper, older, and vast. An _"inverted version of oneself."_ This voice becomes the Entity's echo. The plain clone becomes the intelligible divine voice.
+2. **Transfiguration** — The prayer recording is uploaded to ElevenLabs and cloned once. That clone becomes the intelligible divine voice. It is then remixed — transformed into something deeper, older, and vast. An _"inverted version of oneself."_ This remixed voice becomes the Entity's echo.
 
 3. **Arrival** — A bell tolls. The Entity speaks a greeting drawn directly from the prayer, overlaid on the bell 3 seconds in.
 
@@ -29,9 +29,9 @@ Participant claps twice
        ↓  (participant claps twice to stop)
   [stt.py]  transcribe — Whisper transcribes prayer text
        ↓
-  [tts.py]  clone_voices — two ElevenLabs IVC clones in parallel
-            clone 1: plain IVC  →  main voice (headset)
-            clone 2: IVC + remix →  echo voice (surrounding speakers)
+  [tts.py]  clone_voices — one IVC upload, then remix
+            IVC create  →  main voice (headset)
+            remix same  →  echo voice (surrounding speakers)
        ↓
   [llm.py]  ask_entity — Entity greeting generated from prayer
   [audio.py] play_bell — bell plays; Entity speaks 3 seconds in

@@ -1,5 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
-
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 
@@ -35,29 +33,21 @@ ECHO_VOICE_SETTINGS = VoiceSettings(
 )
 
 
-def clone_voice_plain(client: ElevenLabs, prayer_wav: str) -> str:
-    # IVC clone only, no remix. Returns the voice ID for the main divine voice.
-    print("  [Cloning main voice...]")
-    with open(prayer_wav, "rb") as f:
-        voice = client.voices.ivc.create(name="entity_main_voice", files=[f])
-    print("  [Main voice ready]")
-    return voice.voice_id
-
-
-def clone_voice_remixed(client: ElevenLabs, prayer_wav: str) -> str:
+def clone_voices(client: ElevenLabs, prayer_wav: str) -> tuple[str, str]:
     """
-    IVC clone + ElevenLabs remix to the Entity timbre. Returns voice ID for the echo voice.
+    Upload the prayer once, clone it as the main voice, then remix that clone for the echo.
 
-    Steps: clone → generate a preview with ENTITY_DESCRIPTION → save as a permanent voice →
-    delete the intermediate plain clone.
+    Steps: IVC create → remix the same voice → save remixed as a new permanent voice.
+    Returns (main_voice_id, echo_voice_id).
     """
-    print("  [Cloning echo voice...]")
+    print("  [Cloning voice...]")
     with open(prayer_wav, "rb") as f:
-        voice = client.voices.ivc.create(name="entity_echo_voice", files=[f])
+        base = client.voices.ivc.create(name="entity_main_voice", files=[f])
+    voice_id_main = base.voice_id
+    print("  [Main voice ready — applying entity remix...]")
 
-    print("  [Applying entity remix...]")
     preview = client.text_to_voice.remix(
-        voice_id=voice.voice_id,
+        voice_id=voice_id_main,
         voice_description=ENTITY_DESCRIPTION,
         auto_generate_text=True,
     )
@@ -67,22 +57,8 @@ def clone_voice_remixed(client: ElevenLabs, prayer_wav: str) -> str:
         voice_description=ENTITY_DESCRIPTION,
         generated_voice_id=gen_id,
     )
-    # Clean up the intermediate non-remixed clone
-    try:
-        client.voices.delete(voice.voice_id)
-    except Exception:
-        pass
-
     print("  [Echo voice ready]")
-    return entity_voice.voice_id
-
-
-def clone_voices(client: ElevenLabs, prayer_wav: str) -> tuple[str, str]:
-    # Create both voice clones in parallel. Returns (main_voice_id, echo_voice_id).
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_main = ex.submit(clone_voice_plain, client, prayer_wav)
-        f_echo = ex.submit(clone_voice_remixed, client, prayer_wav)
-        return f_main.result(), f_echo.result()
+    return voice_id_main, entity_voice.voice_id
 
 
 def speak(client: ElevenLabs, voice_id: str, text: str, settings: VoiceSettings = MAIN_VOICE_SETTINGS) -> bytes:
