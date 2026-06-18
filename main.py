@@ -141,7 +141,7 @@ def run_ritual(
 
         print("  [Transcribing...]")
         entity_travel(True, 1)
-        prayer_text, _ = transcribe(prayer_audio)
+        prayer_text, prayer_lang = transcribe(prayer_audio)
         check(abort)
         print("  Prayer received.\n")
 
@@ -159,7 +159,7 @@ def run_ritual(
 
         # ── GREETING ─────────────────────────────────────────────────────────────
         entity_travel(False, 1)
-        greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text)
+        greeting = ask_entity(anthropic_client, [], "Offer a brief, mystical greeting to the seeker who has just arrived. It should be related to the prayer they just shared. Again, it should be brief and welcoming, like something an entity or spirit might say to acknowledge the seeker's presence and prayer.", prayer_text, language=prayer_lang)
         check(abort)
         print(f"\n  They: {greeting}\n")
 
@@ -188,7 +188,7 @@ def run_ritual(
                 # Participant signalled end — generate and speak farewell
                 print("  [They depart...]")
                 farewell = ask_entity(
-                    anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text
+                    anthropic_client, messages, "The seeker is leaving. Offer a brief farewell.", prayer_text, language=prayer_lang
                 )
                 check(abort)
                 print(f"\n  They: {farewell}\n")

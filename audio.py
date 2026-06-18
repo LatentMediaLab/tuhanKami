@@ -33,12 +33,12 @@ SPEECH_INPUT: int | str | None = 0
 # Each tuple: (device_index, channel_index, total_channels_on_stream)
 # channel_index selects L (0) or R (1) within a stereo pair.
 ECHO_OUTPUTS: list[tuple[int | str | None, int, int]] = [
-    (7, 0, 2),  # speaker 1
-    (7, 1, 2),  # speaker 2
-    (5, 0, 2),  # speaker 3
-    (5, 1, 2),  # speaker 4
-    #(5, 0, 2),  # speaker 5
-    #(5, 1, 2),  # speaker 6
+    (6, 0, 2),  # speaker 1
+    (6, 1, 2),  # speaker 2
+    (4, 0, 2),  # speaker 3
+    (4, 1, 2),  # speaker 4
+    #(6, 0, 2),  # speaker 5
+    #(6, 1, 2),  # speaker 6
 ]
 
 

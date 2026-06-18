@@ -16,7 +16,7 @@ Dedicated input device for clap detection (wired mic).
 Run: python -c "import sounddevice as sd; print(sd.query_devices())"
 to list available devices. None = system default.
 """
-CLAP_INPUT: int | str | None = 4
+CLAP_INPUT: int | str | None = 3
 
 
 class InlineClapDetector:
