@@ -51,6 +51,7 @@ def entity_travel(on: bool, device: int) -> None:
 
 # File paths used during a ritual session
 DEBUG_WAV = "debug.wav"       # if present, skips prayer recording and uses this file instead
+LANGUAGE_OVERRIDE = None      # e.g. "ja" to force the entity to always speak Japanese, for presentations
 PRAYER_WAV = "prayer.wav"     # recorded prayer audio
 QUESTION_WAV = "question.wav" # recorded question audio
 BELL_WAV1 = "bonsho/Bonsho04-1.mp3"
@@ -141,7 +142,7 @@ def run_ritual(
 
         print("  [Transcribing...]")
         entity_travel(True, 1)
-        prayer_text, prayer_lang = transcribe(prayer_audio)
+        prayer_text, prayer_lang = transcribe(prayer_audio, language=LANGUAGE_OVERRIDE)
         check(abort)
         print("  Prayer received.\n")
 
@@ -219,7 +220,7 @@ def run_ritual(
                     os.remove(QUESTION_WAV)
                 continue
 
-            question, q_lang = transcribe(QUESTION_WAV)
+            question, q_lang = transcribe(QUESTION_WAV, language=LANGUAGE_OVERRIDE)
             os.remove(QUESTION_WAV)
 
             if not question:
